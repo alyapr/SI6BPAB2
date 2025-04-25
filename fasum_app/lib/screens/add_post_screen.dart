@@ -30,30 +30,30 @@ class _AddPostScreenState extends State<AddPostScreen> {
   Future<void> _compressAndEncodeImage() async {
     if (_image == null) return;
 
-    try{
+    try {
       final compressedImage = await FlutterImageCompress.compressWithFile(
         _image!.path,
         quality: 50,
       );
-      if (compressedImage == null)return;
+      if (compressedImage == null) return;
 
-      setState((){
+      setState(() {
         _base64Image = base64Encode(compressedImage);
       });
-    }catch (e){
-      if (mounted){
+    } catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
-          ).showSnackBar(SnackBar(content: Text('Failed to compress image: $e')));
+        ).showSnackBar(SnackBar(content: Text('Failed to compress image: $e')));
       }
     }
   }
 
-  Future<void>? _pickImage(ImageSource source) async{
-    try{
+  Future<void>? _pickImage(ImageSource source) async {
+    try {
       final PickedFile = await _picker.pickImage(source: source);
-      if (PickedFile != null){
-        setState((){
+      if (PickedFile != null) {
+        setState(() {
           _image = File(PickedFile.path);
           _aiCategory = null;
           _aiDescription = null;
@@ -62,7 +62,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
         await _compressAndEncodeImage();
         // await _generateDescriptionWithAI();
       }
-    }catch (e){
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -71,39 +71,117 @@ class _AddPostScreenState extends State<AddPostScreen> {
     }
   }
 
-  void _showImageSourceDialog(){
-    showModalBottomSheet(
-      context: context, 
-      builder: (BuildContext context){
-        return SafeArea(
-          child: Wrap(
-            children: <Widget>[
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('Take a Picture'),
-                onTap: (){
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Choose from gallery'),
-                onTap: (){
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.gallery);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.cancel),
-                title: const Text('Cancel'),
-                onTap: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
+  Future<void> _getLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      throw Exception('Location services are disabled');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) {
+        throw Exception('Location permissions are denied.');
       }
-    );
+
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: LocationSettings(accuracy: LocationAccuracy.high),
+        ).timeout(const Duration(seconds: 10));
+        setState(() {
+          _latitude = position.latitude;
+          _longtitude = position.longitude;
+        });
+      } catch (e) {
+        debugPrint('Gagal mendapatkan lokasi: $e');
+        setState(() {
+          _latitude = null;
+          _longtitude = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _submitPost() async {
+    if (_base64Image == null || _descriptionController.text.isEmpty) return;
+
+    setState(() => _isUploading = true);
+
+    final now = DateTime.now().toIso8601String();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (uid == null) {
+      setState(() => _isUploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pengguna tidak ditemukan')),
+      );
+      return;
+    }
+
+    try {
+      await _getLocation();
+
+      //ambil nama lengkap dari koleksi user
+      final userDoc =
+          await FirebaseFirestore.instance.collection('user').doc(uid).get();
+      final fullName = userDoc.data()?['fullName'] ?? 'Tanpa Nama';
+      await FirebaseFirestore.instance.collection('post').add({
+        'image': _base64Image,
+        'description': _descriptionController.text,
+        'createAt': now,
+        'latitude': _latitude,
+        'longtitude': _longtitude,
+        'fullName': fullName, // <--- tambahkan ini
+        'userID': uid, // optional : jika ingin simpan UID juga
+      });
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint('Upload failed: $e');
+      if (!mounted) return;
+      setState(() => _isUploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal mengunggah postingan')),
+      );
+    }
+  }
+
+  void _showImageSourceDialog() {
+    showModalBottomSheet(
+        context: context,
+        builder: (BuildContext context) {
+          return SafeArea(
+            child: Wrap(
+              children: <Widget>[
+                ListTile(
+                  leading: const Icon(Icons.camera_alt),
+                  title: const Text('Take a Picture'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickImage(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Choose from gallery'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickImage(ImageSource.gallery);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.cancel),
+                  title: const Text('Cancel'),
+                  onTap: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          );
+        });
   }
 
   @override
@@ -117,13 +195,26 @@ class _AddPostScreenState extends State<AddPostScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Image.file(
-              _image!,
-              height: 250,
-              width: double.infinity,
-              fit: BoxFit.cover,
+            _image != null
+                ? Image.file(
+                    _image!,
+                    height: 200,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  )
+                : GestureDetector(
+                    onTap: _showImageSourceDialog,
+                    child: Container(
+                      height: 200,
+                      color: Colors.grey[300],
+                      child: Center(
+                        child: Icon(Icons.add_a_photo, size: 50),
+                      ),
+                    ),
+                  ),
+            SizedBox(
+              height: 10,
             ),
-            SizedBox(height: 10,),
             TextField(
               controller: _descriptionController,
               textCapitalization: TextCapitalization.sentences,
@@ -134,7 +225,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
               ),
             ),
             ElevatedButton(
-              onPressed: (){}, 
+              onPressed: () {},
               child: Text('Post'),
             ),
           ],
