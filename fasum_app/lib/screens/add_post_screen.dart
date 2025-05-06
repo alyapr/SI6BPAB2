@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -60,7 +61,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
           _descriptionController.clear();
         });
         await _compressAndEncodeImage();
-        // await _generateDescriptionWithAI();
+        await _generateDescriptionWithAI();
       }
     } catch (e) {
       if (mounted) {
@@ -68,6 +69,67 @@ class _AddPostScreenState extends State<AddPostScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
       }
+    }
+  }
+
+  Future<void> _generateDescriptionWithAI() async {
+    if (_image == null) return;
+    setState(() => _isGenerating = true);
+    try {
+      final model = GenerativeModel(
+        apiKey: 'AIzaSyBQrFNnbyYk6tM0KfGshPl6naIMN40VZz0',
+        model: 'gemini-1.5-pro',
+      );
+
+      final imageBytes = await _image!.readAsBytes();
+      final content = Content.multi([
+        DataPart('image/jpeg', imageBytes),
+        TextPart(
+          'Berdasarkan foto ini, identifikasi satu kategori utama kerusakan fasilitas umum'
+          'dari daftar berikut: Jalan Rusak, Marka Pudar, Lampu mati, Trotoar rusak, '
+          'Rambu rusak, Jembatan Rusak, Saluran air tersumbat, Sampah menumpuk, Sungai Tercemar '
+          'Vandalisme, Banjir, dan lainnya.'
+          'Pilih kategori yang paling dominan atau paling mendesak untuk dilaporkan'
+          'Buat deskripsi singkat untuk laporan perbaikan, dan tambahkan permohonan perbaikan.'
+          'Fokus pada kerusakan yang terlihat dan hindari spekulasi.\n\n'
+          'Format output yang diinginkan:\n'
+          'Kategori: [satu kategori yang dipilih]\n'
+          'Deskripsi: [deskripsi singkat]',
+        ),
+      ]);
+
+      final response = await model.generateContent([content]);
+      final aiText = response.text;
+      print('AI TEXT: $aiText');
+
+      if (aiText != null && aiText.isNotEmpty) {
+        final lines = aiText.split('\n');
+        String? category;
+        String? description;
+
+        for (var line in lines) {
+          final lower = line.toLowerCase();
+          if (lower.startsWith('kategori:')) {
+            category = line.substring(9).trim();
+          } else if (lower.startsWith('deskripsi:')) {
+            description = line.substring(10).trim();
+          } else if (lower.startsWith('Keterangan')) {
+            description = line.substring(11).trim();
+          }
+        }
+
+        description ??= aiText.trim();
+
+        setState(() {
+          _aiCategory = category ?? 'Tidak diketahui';
+          _aiDescription = description;
+          _descriptionController.text = _aiDescription!;
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to generate description: $e');
+    } finally {
+      if (mounted) setState(() => _isGenerating = false);
     }
   }
 
@@ -90,8 +152,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
       try {
         final position = await Geolocator.getCurrentPosition(
-          locationSettings: LocationSettings(accuracy: LocationAccuracy.high),
-        ).timeout(const Duration(seconds: 10));
+                // locationSettings: LocationSettings(accuracy: LocationAccuracy.high),
+                )
+            .timeout(const Duration(seconds: 10));
         setState(() {
           _latitude = position.latitude;
           _longtitude = position.longitude;
