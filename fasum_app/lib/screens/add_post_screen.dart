@@ -28,26 +28,57 @@ class _AddPostScreenState extends State<AddPostScreen> {
   String? _aiDescription;
   bool _isGenerating = false;
 
-  Future<void> _compressAndEncodeImage() async {
-    if (_image == null) return;
+  List<String> categories = [
+    'Jalan Rusak',
+    'Marka Pudar',
+    'Lampu Mati',
+    'Trotoar Rusak',
+    'Rambu Rusak',
+    'Jembatan Rusak',
+    'Sampah Menumpuk',
+    'Saluran Tersumbat',
+    'Sungai Tercemar',
+    'Sampah Sungai',
+    'Pohon Tumbang',
+    'Taman Rusak',
+    'Fasilitas Rusak',
+    'Pipa Bocor',
+    'Vandalisme',
+    'Banjir',
+    'Lainnya',
+  ];
+  Set<String> _selectedCategories = {}; // Untuk menampung kategori yang dipilih
+  String? _selectedCategory; // Menyimpan kategori yang dipilih
+  void _showCategorySelection() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (BuildContext context) {
+        return ListView(
+          shrinkWrap: true,
+          children: categories.map((category) {
+            return ListTile(
+              title: Text(category),
+              onTap: () {
+                setState(() {
+                  _aiCategory =
+                      category; // Ganti AI category dengan pilihan user
+                });
+                Navigator.pop(context);
+              },
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
 
-    try {
-      final compressedImage = await FlutterImageCompress.compressWithFile(
-        _image!.path,
-        quality: 50,
-      );
-      if (compressedImage == null) return;
-
-      setState(() {
-        _base64Image = base64Encode(compressedImage);
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to compress image: $e')));
-      }
-    }
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    super.dispose();
   }
 
   Future<void>? _pickImage(ImageSource source) async {
@@ -68,6 +99,28 @@ class _AddPostScreenState extends State<AddPostScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
+      }
+    }
+  }
+
+  Future<void> _compressAndEncodeImage() async {
+    if (_image == null) return;
+
+    try {
+      final compressedImage = await FlutterImageCompress.compressWithFile(
+        _image!.path,
+        quality: 50,
+      );
+      if (compressedImage == null) return;
+
+      setState(() {
+        _base64Image = base64Encode(compressedImage);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to compress image: $e')));
       }
     }
   }
@@ -134,82 +187,95 @@ class _AddPostScreenState extends State<AddPostScreen> {
   }
 
   Future<void> _getLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      throw Exception('Location services are disabled');
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.deniedForever ||
-          permission == LocationPermission.denied) {
-        throw Exception('Location permissions are denied.');
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location services are disabled.')),
+        );
+        return;
       }
-
-      try {
-        final position = await Geolocator.getCurrentPosition(
-                // locationSettings: LocationSettings(accuracy: LocationAccuracy.high),
-                )
-            .timeout(const Duration(seconds: 10));
-        setState(() {
-          _latitude = position.latitude;
-          _longtitude = position.longitude;
-        });
-      } catch (e) {
-        debugPrint('Gagal mendapatkan lokasi: $e');
-        setState(() {
-          _latitude = null;
-          _longtitude = null;
-        });
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.deniedForever ||
+            permission == LocationPermission.denied) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permissions are denied.')),
+          );
+          return;
+        }
       }
+      final position = await Geolocator.getCurrentPosition(
+              // locationSettings: const LocationSettings(
+              //   accuracy: LocationAccuracy.high,
+              // ),
+              )
+          .timeout(const Duration(seconds: 10));
+      setState(() {
+        _latitude = position.latitude;
+        _longtitude = position.longitude;
+      });
+    } catch (e) {
+      debugPrint('Failed to retrieve location: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to retrieve location: $e')),
+      );
+      setState(() {
+        _latitude = null;
+        _longtitude = null;
+      });
     }
   }
 
   Future<void> _submitPost() async {
-    if (_base64Image == null || _descriptionController.text.isEmpty) return;
-
-    setState(() => _isUploading = true);
-
-    final now = DateTime.now().toIso8601String();
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-
-    if (uid == null) {
-      setState(() => _isUploading = false);
+    if (_base64Image == null || _descriptionController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pengguna tidak ditemukan')),
+        const SnackBar(content: Text('Please add an image and description.')),
       );
       return;
     }
-
+    setState(() => _isUploading = true);
+    final now = DateTime.now().toIso8601String();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      setState(() => _isUploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User not found. Please sign in.')),
+      );
+      return;
+    }
     try {
       await _getLocation();
-
-      //ambil nama lengkap dari koleksi user
       final userDoc =
-          await FirebaseFirestore.instance.collection('user').doc(uid).get();
-      final fullName = userDoc.data()?['fullName'] ?? 'Tanpa Nama';
-      await FirebaseFirestore.instance.collection('post').add({
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final fullName = userDoc.data()?['fullName'] ?? 'Anonymous';
+      await FirebaseFirestore.instance.collection('posts').add({
         'image': _base64Image,
         'description': _descriptionController.text,
-        'createAt': now,
+        'category': _aiCategory ?? 'Tidak diketahui',
+        'createdAt': now,
         'latitude': _latitude,
-        'longtitude': _longtitude,
-        'fullName': fullName, // <--- tambahkan ini
-        'userID': uid, // optional : jika ingin simpan UID juga
+        'longitude': _longtitude,
+        'fullName': fullName,
+        'userId': uid,
       });
       if (!mounted) return;
       Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Post uploaded successfully!')),
+      );
     } catch (e) {
       debugPrint('Upload failed: $e');
       if (!mounted) return;
       setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal mengunggah postingan')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to upload the post: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
     }
   }
 
@@ -251,45 +317,138 @@ class _AddPostScreenState extends State<AddPostScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Add Post'),
+        title: const Text('Add Post'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _image != null
-                ? Image.file(
-                    _image!,
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  )
-                : GestureDetector(
-                    onTap: _showImageSourceDialog,
-                    child: Container(
-                      height: 200,
-                      color: Colors.grey[300],
-                      child: Center(
-                        child: Icon(Icons.add_a_photo, size: 50),
+            GestureDetector(
+              onTap: _showImageSourceDialog,
+              child: Container(
+                height: 250,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: _image != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(
+                          _image!,
+                          height: 250,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : const Center(
+                        child: Icon(
+                          Icons.add_a_photo,
+                          size: 50,
+                          color: Colors.grey,
+                        ),
                       ),
-                    ),
-                  ),
-            SizedBox(
-              height: 10,
-            ),
-            TextField(
-              controller: _descriptionController,
-              textCapitalization: TextCapitalization.sentences,
-              maxLines: 6,
-              decoration: const InputDecoration(
-                hintText: 'Add a brief description...',
-                border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 16),
+            // Efek shimmer saat generating
+            if (_isGenerating)
+              Shimmer.fromColors(
+                baseColor: Colors.grey[300]!,
+                highlightColor: Colors.grey[100]!,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 20,
+                      width: 100,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      margin: const EdgeInsets.only(bottom: 12),
+                    ),
+                    Container(
+                      height: 80,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            // Kategori dan tombol refresh
+            if (_aiCategory != null && !_isGenerating)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    GestureDetector(
+                      onTap: _showCategorySelection,
+                      child: Chip(
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_aiCategory!),
+                            const SizedBox(width: 6),
+                            const Icon(Icons.edit, size: 16),
+                          ],
+                        ),
+                        backgroundColor: Colors.blue[100],
+                      ),
+                    ),
+                    if (_image != null)
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
+                        tooltip: 'Generate another description',
+                        onPressed: _generateDescriptionWithAI,
+                      ),
+                  ],
+                ),
+              ),
+            // TextField untuk deskripsi
+            Offstage(
+              offstage: _isGenerating,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  TextField(
+                    controller: _descriptionController,
+                    textCapitalization: TextCapitalization.sentences,
+                    maxLines: 6,
+                    decoration: const InputDecoration(
+                      hintText: 'Add a brief description...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Tombol kirim post
             ElevatedButton(
-              onPressed: () {},
-              child: Text('Post'),
+              onPressed: _isUploading ? null : _submitPost,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(fontSize: 16),
+                backgroundColor: Colors.green,
+              ),
+              child: _isUploading
+                  ? const SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation(Colors.white),
+                      ),
+                    )
+                  : const Text(
+                      'Post',
+                      style: TextStyle(color: Colors.white),
+                    ),
             ),
           ],
         ),
