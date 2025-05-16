@@ -1,8 +1,12 @@
 import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fasum_app/screens/sign_in_screen.dart';
+import 'package:fasum_app/screens/add_post_screen.dart';
+import 'package:intl/intl.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,7 +24,99 @@ Future<void> signOut(BuildContext context) async {
 
 class _HomeScreenState extends State<HomeScreen> {
   String? selectedCategory;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  List<String> categories = [
+    'Jalan Rusak',
+    'Marka Pudar',
+    'Lampu Mati',
+    'Trotoar Rusak',
+    'Rambu Rusak',
+    'Jembatan Rusak',
+    'Sampah Menumpuk',
+    'Saluran Tersumbat',
+    'Sungai Tercemar',
+    'Sampah Sungai',
+    'Pohon Tumbang',
+    'Taman Rusak',
+    'Fasilitas Rusak',
+    'Pipa Bocor',
+    'Vandalisme',
+    'Banjir',
+    'Lainnya'
+  ];
+
+  String formatTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+    if (diff.inSeconds < 60) {
+      return '${diff.inSeconds} secs ago';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes} mins ago';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours} hrs ago';
+    } else if (diff.inHours < 48) {
+      return '1 day ago';
+    } else {
+      return DateFormat('dd/mm/yyy').format(dateTime);
+    }
+  }
+
+  Future<void> signOut() async {
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const SignInScreen()),
+      (route) => false,
+    );
+  }
+
+  void _showCategoryFilter() async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+            child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.75,
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.clear),
+                title: const Text('Semua Kategori'),
+                onTap: () => Navigator.pop(
+                    context, null), //null untuk pilih smua kategori
+              ),
+              const Divider(),
+              ...categories.map(
+                (category) => ListTile(
+                  title: Text(category),
+                  trailing: selectedCategory == category
+                      ? Icon(Icons.check,
+                          color: Theme.of(context).colorScheme.primary)
+                      : null,
+                  onTap: () => Navigator.pop(context, category),
+                ),
+              )
+            ],
+          ),
+        ));
+      },
+    );
+    if (result != null) {
+      setState(() {
+        selectedCategory = result;
+      });
+    } else {
+      setState(() {
+        selectedCategory = null;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
-          "Fasum",
+          'Fasum',
           style: TextStyle(
             color: Colors.green[600],
             fontWeight: FontWeight.bold,
@@ -36,23 +132,21 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
-            onPressed: () {}, //_showCategoryFilter
+            onPressed: _showCategoryFilter,
             icon: const Icon(Icons.filter_list),
             tooltip: 'Filter Kategori',
           ),
           IconButton(
             onPressed: () {
-              signOut(context);
+              signOut();
             },
             icon: const Icon(Icons.logout),
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          setState(() {});
-        },
-        child: StreamBuilder<QuerySnapshot>(
+        onRefresh: () async {},
+        child: StreamBuilder(
           stream: FirebaseFirestore.instance
               .collection('posts')
               .orderBy('createdAt', descending: true)
@@ -61,20 +155,18 @@ class _HomeScreenState extends State<HomeScreen> {
             if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
-
             final posts = snapshot.data!.docs.where((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              final category = data['category'] as String? ?? 'Lainnya';
+              final data = doc.data();
+              final category = data['category'] ?? 'Lainnya';
               return selectedCategory == null || selectedCategory == category;
             }).toList();
 
             if (posts.isEmpty) {
               return const Center(
-                  child: Text("Tidak ada laporan untuk kategori ini."));
+                child: Text("Tidak ada laporan untuk kategori ini."),
+              );
             }
-
             return ListView.builder(
-              physics: const AlwaysScrollableScrollPhysics(),
               itemCount: posts.length,
               itemBuilder: (context, index) {
                 final data = posts[index].data();
@@ -104,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (imageBase64 != null)
-                          ClipRect(
+                          ClipRRect(
                             borderRadius: const BorderRadius.vertical(
                               top: Radius.circular(10),
                             ),
@@ -125,14 +217,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                fullName,
+                                fullname,
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                               Text(
-                                createdAt.toString(),
+                                createdAt as String, // nanti diubah
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
@@ -141,15 +233,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               const SizedBox(height: 12),
                               Text(
                                 description ?? '',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                style: const TextStyle(fontSize: 16),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ],
                           ),
-                        ),
+                        )
                       ],
                     ),
                   ),
@@ -158,6 +248,14 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (context) => AddPostScreen()));
+        },
+        child: const Icon(Icons.add),
       ),
     );
   }
