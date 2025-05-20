@@ -1,11 +1,10 @@
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:fasum_app/screens/sign_in_screen.dart';
 import 'package:fasum_app/screens/add_post_screen.dart';
+import 'package:fasum_app/screens/detail_screen.dart';
+import 'package:fasum_app/screens/sign_in_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:intl/intl.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -15,17 +14,9 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-Future<void> signOut(BuildContext context) async {
-  await FirebaseAuth.instance.signOut();
-  Navigator.of(context).pushReplacement(
-    MaterialPageRoute(builder: (context) => const SignInScreen()),
-  );
-}
-
 class _HomeScreenState extends State<HomeScreen> {
   String? selectedCategory;
-
-  List<String> categories = [
+  List categories = [
     'Jalan Rusak',
     'Marka Pudar',
     'Lampu Mati',
@@ -42,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
     'Pipa Bocor',
     'Vandalisme',
     'Banjir',
-    'Lainnya'
+    'Lainnya',
   ];
 
   String formatTime(DateTime dateTime) {
@@ -57,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (diff.inHours < 48) {
       return '1 day ago';
     } else {
-      return DateFormat('dd/mm/yyy').format(dateTime);
+      return DateFormat('dd/MM/yyyy').format(dateTime);
     }
   }
 
@@ -72,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showCategoryFilter() async {
-    final result = await showModalBottomSheet<String>(
+    final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -80,40 +71,44 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       builder: (context) {
         return SafeArea(
-            child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.75,
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              ListTile(
-                leading: const Icon(Icons.clear),
-                title: const Text('Semua Kategori'),
-                onTap: () => Navigator.pop(
-                    context, null), //null untuk pilih smua kategori
-              ),
-              const Divider(),
-              ...categories.map(
-                (category) => ListTile(
-                  title: Text(category),
-                  trailing: selectedCategory == category
-                      ? Icon(Icons.check,
-                          color: Theme.of(context).colorScheme.primary)
-                      : null,
-                  onTap: () => Navigator.pop(context, category),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.75,
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.clear),
+                  title: const Text('Semua Kategori'),
+                  onTap: () => Navigator.pop(
+                      context, null), // Null untuk memilih semua kategori
                 ),
-              )
-            ],
+                const Divider(),
+                ...categories.map(
+                  (category) => ListTile(
+                    title: Text(category),
+                    trailing: selectedCategory == category
+                        ? Icon(Icons.check,
+                            color: Theme.of(context).colorScheme.primary)
+                        : null,
+                    onTap: () => Navigator.pop(context, category),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ));
+        );
       },
     );
     if (result != null) {
       setState(() {
-        selectedCategory = result;
+        selectedCategory =
+            result; // Set kategori yang dipilih atau null untuk Semua Kategori
       });
     } else {
+      // Jika result adalah null, berarti memilih Semua Kategori
       setState(() {
-        selectedCategory = null;
+        selectedCategory =
+            null; // Reset ke null untuk menampilkan semua kategori
       });
     }
   }
@@ -124,7 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
-          'Fasum',
+          "Fasum",
           style: TextStyle(
             color: Colors.green[600],
             fontWeight: FontWeight.bold,
@@ -145,8 +140,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async {},
-        child: StreamBuilder(
+        onRefresh: () async {
+          setState(() {});
+        },
+        child: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('posts')
               .orderBy('createdAt', descending: true)
@@ -156,34 +153,47 @@ class _HomeScreenState extends State<HomeScreen> {
               return const Center(child: CircularProgressIndicator());
             }
             final posts = snapshot.data!.docs.where((doc) {
-              final data = doc.data();
+              final data = doc.data() as Map<String, dynamic>;
               final category = data['category'] ?? 'Lainnya';
               return selectedCategory == null || selectedCategory == category;
             }).toList();
-
             if (posts.isEmpty) {
               return const Center(
-                child: Text("Tidak ada laporan untuk kategori ini."),
-              );
+                  child: Text("Tidak ada laporan untuk kategori ini."));
             }
             return ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
               itemCount: posts.length,
               itemBuilder: (context, index) {
-                final data = posts[index].data();
+                final data = posts[index].data() as Map<String, dynamic>;
                 final imageBase64 = data['image'];
                 final description = data['description'];
                 final createdAtStr = data['createdAt'];
-                final fullname = data['fullname'] ?? 'Anonim';
+                final fullName = data['fullName'] ?? 'Anonim';
                 final latitude = data['latitude'];
                 final longitude = data['longitude'];
                 final category = data['category'] ?? 'Lainnya';
                 final createdAt = DateTime.parse(createdAtStr);
-
                 String heroTag =
                     'fasum-image-${createdAt.millisecondsSinceEpoch}';
-
                 return InkWell(
-                  onTap: () {},
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => DetailScreen(
+                          imageBase64: imageBase64,
+                          description: description ?? '',
+                          createdAt: createdAt,
+                          fullName: fullName,
+                          latitude: latitude,
+                          longitude: longitude,
+                          category: category,
+                          heroTag: heroTag,
+                        ),
+                      ),
+                    );
+                  },
                   child: Card(
                     elevation: 1,
                     color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -217,14 +227,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                fullname,
+                                fullName,
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                               Text(
-                                createdAt as String, // nanti diubah
+                                formatTime(createdAt),
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
@@ -239,7 +249,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ],
                           ),
-                        )
+                        ),
                       ],
                     ),
                   ),
@@ -251,9 +261,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (context) => AddPostScreen()));
+          Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => AddPostScreen()));
         },
         child: const Icon(Icons.add),
       ),
