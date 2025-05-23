@@ -73,7 +73,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => FullscreenImageScreen(
+                          builder: (_) => FullScreenImageScreen(
                             imageBase64: widget.imageBase64,
                           ),
                         ),

@@ -1,22 +1,29 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:fasum_app/screens/add_post_screen.dart';
-import 'package:fasum_app/screens/detail_screen.dart';
-import 'package:fasum_app/screens/sign_in_screen.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
 import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:fasum_app/screens/sign_in_screen.dart';
+import 'package:fasum_app/screens/add_post_screen.dart';
 import 'package:intl/intl.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+  // Future<void> signOut(context) async {
+  //   await FirebaseAuth.instance.signOut();
+  //   Navigator.of(context).pushReplacement(
+  //     MaterialPageRoute(builder: (context) => const SignInScreen()),
+  //   );
+  // }
 
-  @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
   String? selectedCategory;
-  List categories = [
+
+  List<String> categories = [
     'Jalan Rusak',
     'Marka Pudar',
     'Lampu Mati',
@@ -26,7 +33,6 @@ class _HomeScreenState extends State<HomeScreen> {
     'Sampah Menumpuk',
     'Saluran Tersumbat',
     'Sungai Tercemar',
-    'Sampah Sungai',
     'Pohon Tumbang',
     'Taman Rusak',
     'Fasilitas Rusak',
@@ -46,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (diff.inHours < 24) {
       return '${diff.inHours} hrs ago';
     } else if (diff.inHours < 48) {
-      return '1 day ago';
+      return ' 1 days ago';
     } else {
       return DateFormat('dd/MM/yyyy').format(dateTime);
     }
@@ -63,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showCategoryFilter() async {
-    final result = await showModalBottomSheet(
+    final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -79,8 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ListTile(
                   leading: const Icon(Icons.clear),
                   title: const Text('Semua Kategori'),
-                  onTap: () => Navigator.pop(
-                      context, null), // Null untuk memilih semua kategori
+                  onTap: () => Navigator.pop(context, null),
                 ),
                 const Divider(),
                 ...categories.map(
@@ -99,16 +104,14 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
+
     if (result != null) {
       setState(() {
-        selectedCategory =
-            result; // Set kategori yang dipilih atau null untuk Semua Kategori
+        selectedCategory = result;
       });
     } else {
-      // Jika result adalah null, berarti memilih Semua Kategori
       setState(() {
-        selectedCategory =
-            null; // Reset ke null untuk menampilkan semua kategori
+        selectedCategory = null;
       });
     }
   }
@@ -119,7 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
-          "Fasum",
+          'Fasum',
           style: TextStyle(
             color: Colors.green[600],
             fontWeight: FontWeight.bold,
@@ -140,10 +143,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          setState(() {});
-        },
-        child: StreamBuilder<QuerySnapshot>(
+        onRefresh: () async {},
+        child: StreamBuilder(
           stream: FirebaseFirestore.instance
               .collection('posts')
               .orderBy('createdAt', descending: true)
@@ -153,47 +154,34 @@ class _HomeScreenState extends State<HomeScreen> {
               return const Center(child: CircularProgressIndicator());
             }
             final posts = snapshot.data!.docs.where((doc) {
-              final data = doc.data() as Map<String, dynamic>;
+              final data = doc.data();
               final category = data['category'] ?? 'Lainnya';
               return selectedCategory == null || selectedCategory == category;
             }).toList();
+
             if (posts.isEmpty) {
               return const Center(
-                  child: Text("Tidak ada laporan untuk kategori ini."));
+                child: Text("Tidak ada laporan untuk kategori ini."),
+              );
             }
             return ListView.builder(
-              physics: const AlwaysScrollableScrollPhysics(),
               itemCount: posts.length,
               itemBuilder: (context, index) {
-                final data = posts[index].data() as Map<String, dynamic>;
+                final data = posts[index].data();
                 final imageBase64 = data['image'];
                 final description = data['description'];
                 final createdAtStr = data['createdAt'];
-                final fullName = data['fullName'] ?? 'Anonim';
+                final fullname = data['fullname'] ?? 'Anonim';
                 final latitude = data['latitude'];
                 final longitude = data['longitude'];
                 final category = data['category'] ?? 'Lainnya';
                 final createdAt = DateTime.parse(createdAtStr);
+
                 String heroTag =
                     'fasum-image-${createdAt.millisecondsSinceEpoch}';
+
                 return InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => DetailScreen(
-                          imageBase64: imageBase64,
-                          description: description ?? '',
-                          createdAt: createdAt,
-                          fullName: fullName,
-                          latitude: latitude,
-                          longitude: longitude,
-                          category: category,
-                          heroTag: heroTag,
-                        ),
-                      ),
-                    );
-                  },
+                  onTap: () {},
                   child: Card(
                     elevation: 1,
                     color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -227,7 +215,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                fullName,
+                                fullname,
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -249,7 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ],
                           ),
-                        ),
+                        )
                       ],
                     ),
                   ),
@@ -261,8 +249,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.of(context).push(
-              MaterialPageRoute(builder: (context) => AddPostScreen()));
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (context) => AddPostScreen()));
         },
         child: const Icon(Icons.add),
       ),
